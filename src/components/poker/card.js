@@ -1,9 +1,21 @@
 import React,{useState, useEffect} from "react"
 
-const Poker = ({number, disabled= false,style = {}, cardsDictUpdater})=>{
+let numberName = [...Array(18).keys()]
+
+numberName[11] = 'J'
+numberName[12] = 'Q'
+numberName[13] = 'K'
+numberName[14] = 'A'
+numberName[15] = '2'
+numberName[16] = 'joker'
+numberName[17] = 'JOKER'
+
+const Poker = ({bindClear, maxSelect, number, disabled= false,style = {}, cardsDictUpdater})=>{
     const [count, updateCount] = useState(0)
 
-    let countStr = count?'x'+count:''
+    bindClear(()=>{updateCount(0)})
+
+    let countStr = count?' x '+count:''
     return (
     <div style={{
         position:'relative',
@@ -24,14 +36,16 @@ const Poker = ({number, disabled= false,style = {}, cardsDictUpdater})=>{
             right:'5px'
         }}>
             <button onClick={()=>{
-                cardsDictUpdater(number, count)
-                updateCount(Math.min(4,count+1))}}>+</button>
+                let newCount = Math.min(maxSelect,count+1)
+                cardsDictUpdater(number, newCount)
+                updateCount(newCount)}}>+</button>
             <button onClick={()=>{
-                cardsDictUpdater(number, count)
-                updateCount(Math.max(0,count-1))}}>-</button>
+                let newCount = Math.max(0,count-1)
+                cardsDictUpdater(number, newCount)
+                updateCount(newCount)}}>-</button>
         </div>
         
-    {`${number}${countStr}`}
+    {`${numberName[number]}${countStr}`}
   </div>)
 }
 
