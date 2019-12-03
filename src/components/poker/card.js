@@ -10,14 +10,26 @@ numberName[15] = '2'
 numberName[16] = 'joker'
 numberName[17] = 'JOKER'
 
-const Poker = ({bindClear, maxSelect, number, disabled= false,style = {}, cardsDictUpdater})=>{
+const Poker = ({onPlaySelect, isPlaying, playDirection, bindClear, maxSelect, number, disabled= false,style = {}, cardsDictUpdater})=>{
     const [count, updateCount] = useState(0)
+    const [selected, updateSelected] = useState(0)
+    let transform = ''
+    let countStr = ''
+    const onClickCard = ()=>{}
 
-    bindClear(()=>{updateCount(0)})
-
-    let countStr = count?' x '+count:''
+    if(isPlaying){
+        transform = selected?'translateZ(30%)':''
+        onClickCard = ()=>{
+            updateSelected(!selected)
+            onPlaySelect(selected)
+        }
+    }else{
+        bindClear(()=>{updateCount(0)})
+        countStr = count?' x '+count:''
+    }
+    
     return (
-    <div style={{
+    <div onClick = {onClickCard} style={{
         position:'relative',
         opacity:disabled?'.5':'1',
         display:'flex',
@@ -25,25 +37,29 @@ const Poker = ({bindClear, maxSelect, number, disabled= false,style = {}, cardsD
         alignItems:'center',
         fontSize:'2em',
         margin:'10px',
+        transform,
         color:'black',
         border:'3px solid black',
         width:'5em',
         height:'10em'
     ,...style}}>
-        <div style={{
-            position:'absolute',
-            top:'5px',
-            right:'5px'
-        }}>
-            <button onClick={()=>{
-                let newCount = Math.min(maxSelect,count+1)
-                cardsDictUpdater(number, newCount)
-                updateCount(newCount)}}>+</button>
-            <button onClick={()=>{
-                let newCount = Math.max(0,count-1)
-                cardsDictUpdater(number, newCount)
-                updateCount(newCount)}}>-</button>
-        </div>
+
+            {isPlaying?'':
+                    <div style={{
+                        position:'absolute',
+                        top:'5px',
+                        right:'5px'
+                    }}>
+                        <button onClick={()=>{
+                            let newCount = Math.min(maxSelect,count+1)
+                            cardsDictUpdater(number, newCount)
+                            updateCount(newCount)}}>+</button>
+                        <button onClick={()=>{
+                            let newCount = Math.max(0,count-1)
+                            cardsDictUpdater(number, newCount)
+                            updateCount(newCount)}}>-</button>
+            </div>
+            }
         
     {`${numberName[number]}${countStr}`}
   </div>)
