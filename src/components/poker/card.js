@@ -1,68 +1,61 @@
-import React,{useState, useEffect} from "react"
+import React, {useState, useEffect} from "react"
+import {save as saveGame, get as getGame, DEFAULT as defaultGame, act} from "./machine"
+import {ACTION, GAME_STATUS, PLAYER_SIDE, numberName} from "./constants"
 
-let numberName = [...Array(18).keys()]
-
-numberName[11] = 'J'
-numberName[12] = 'Q'
-numberName[13] = 'K'
-numberName[14] = 'A'
-numberName[15] = '2'
-numberName[16] = 'joker'
-numberName[17] = 'JOKER'
-
-const Poker = ({onPlaySelect, isPlaying, playDirection, bindClear, maxSelect, number, disabled= false,style = {}, cardsDictUpdater})=>{
-    const [count, updateCount] = useState(0)
-    const [selected, updateSelected] = useState(0)
+const Poker = ({game, side, number, index, style, disabled}) => {
+    const cards = side === PLAYER_SIDE.TOP ? game.selection_a : game.selection_b
+    let countStr = numberName[number]
     let transform = ''
-    let countStr = ''
-    const onClickCard = ()=>{}
+    let onClickCard = () => {}
 
-    if(isPlaying){
-        transform = selected?'translateZ(30%)':''
-        onClickCard = ()=>{
-            updateSelected(!selected)
-            onPlaySelect(selected)
-        }
-    }else{
-        bindClear(()=>{updateCount(0)})
-        countStr = count?' x '+count:''
-    }
-    
-    return (
-    <div onClick = {onClickCard} style={{
-        position:'relative',
-        opacity:disabled?'.5':'1',
-        display:'flex',
-        justifyContent:'center',
-        alignItems:'center',
-        fontSize:'2em',
-        margin:'10px',
-        transform,
-        color:'black',
-        border:'3px solid black',
-        width:'5em',
-        height:'10em'
-    ,...style}}>
-
-            {isPlaying?'':
-                    <div style={{
-                        position:'absolute',
-                        top:'5px',
-                        right:'5px'
-                    }}>
-                        <button onClick={()=>{
-                            let newCount = Math.min(maxSelect,count+1)
-                            cardsDictUpdater(number, newCount)
-                            updateCount(newCount)}}>+</button>
-                        <button onClick={()=>{
-                            let newCount = Math.max(0,count-1)
-                            cardsDictUpdater(number, newCount)
-                            updateCount(newCount)}}>-</button>
-            </div>
+    if (game.status === GAME_STATUS.GAMING) {
+        if (side == PLAYER_SIDE.BOTTOM) {
+            transform = game.player_cards_selected_each[index] ? 'translateY(-30px)' : ''
+            onClickCard = () => {
+                game = act(game, ACTION.GAME_SELECT, [number, index])
             }
-        
-    {`${numberName[number]}${countStr}`}
-  </div>)
+        }
+    }
+
+    if(game.status === GAME_STATUS.SELECT){
+        countStr = `${number}${cards[number] > 0 ? ' x ' + cards[number] : ''}`
+    }
+
+    return (
+        <div onClick={onClickCard} style={{
+            position: 'relative',
+            opacity: disabled ? '.5' : '1',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            fontSize: '2em',
+            margin: '10px',
+            transform,
+            color: 'black',
+            border: '3px solid black',
+            width: '5em',
+            height: '10em'
+            , ...style
+        }}>
+
+            {game.status !== GAME_STATUS.SELECT ? '' :
+                <div style={{
+                    position: 'absolute',
+                    top: '5px',
+                    right: '5px'
+                }}>
+                    <button onClick={() => {
+                        game = act(game, ACTION.SELECT_ADDCARD, [number, 1, side])
+                    }}>+
+                    </button>
+                    <button onClick={() => {
+                        game = act(game, ACTION.SELECT_REMOVECARD, [number, 1, side])
+                    }}>-
+                    </button>
+                </div>
+            }
+            {countStr}
+        </div>)
 }
 
 export default Poker

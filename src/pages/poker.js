@@ -1,67 +1,130 @@
-import React, {useState} from "react"
+import React, {useState, useEffect} from "react"
 import CardSelector from "../components/poker/cardSelector"
 import Layout from "../components/layout"
+import CardTaker from "../components/poker/cardTaker"
+import {ACTION, GAME_STATUS, PLAYER_SIDE} from "../components/poker/constants"
+import {
+    save as saveGame,
+    get as getGame,
+    DEFAULT as defaultGame,
+    act,
+    getRoot as getGameRoot
+} from "../components/poker/machine"
+import {build, findNext, matchNext, onlyToPass} from "../components/poker/algo"
 
-const STATUS = {
-    SELECT_A: 0,
-    SELECT_B: 1,
-    GAMING: 2,
-    GAME_OVER: 3
-}
+const DefaultCardPool = [...Array(18).keys()].map(n => [n < 16 ? 4 : 1, 0, 0])
 
-const SIDE = {
-    A: 0,//ABOVE
-    B: 1//BELOW
-}
+const Match = ({game}) => {
+    const confirmCards = () => {
+        if (!game.player_cards_selected.length && !onlyToPass(game.node)) {
+            alert('选牌先')
+            return
+        }
 
-const DefaultCardPool = [...Array(18).keys()].map(n => n < 16 ? 4 : 1)
+        let res = act(game, ACTION.GAME_SHOWCARDS)
+        if (!res) {
+            alert('不能这么出')
+        } else {
+            game = res
+        }
+        game = act(game, ACTION.GAME_CLEAR_SELECTION)
 
-const Poker = () => {
-    const [gameStatus, updateStatus] = useState(STATUS.SELECT_A)
-    const [ADisabled, updateA] = useState(0)
-    const [BDisabled, updateB] = useState(1)
-    const [cardPool, updateCardPool] = useState([...DefaultCardPool])
-    const [side, updateSide] = useState(SIDE.A)
-    const [playerFirst, updateFirst] = useState(true)
+        if(game.node.end){
+            game = act(game, ACTION.GAME_END)
+        }
+    }
 
-    let clearA, clearB
+    const restart = ()=>{
+        game = act(game, ACTION.GAME_RESTART)
+    }
 
     return (
-      <div>
-          <button onClick={() => {
-              clearB()
-              updateCardPool([...DefaultCardPool])
-              updateB(1)
-              updateA(0)
-              updateStatus(STATUS.SELECT_A)
-          }} {...(gameStatus == STATUS.SELECT_B ? {} : {disabled: true})}>重选上面的牌
-          </button>
+        <div>
+            <div style={{position: "absolute", top: 0}}><CardTaker side={PLAYER_SIDE.TOP} game={game}/></div>
 
+            <div style={{
+                position:'absolute',
+                bottom: '40px',
+                zIndex:'3',
+                width:'100vw',
+                display: 'flex',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+            }}>
+                {game.status==GAME_STATUS.GAMEOVER?
+                    <div>
+                        <button onClick={restart}>重新开始
+                        </button>
+                    </div>
+                :
+                    <div>
+                        <button onClick={confirmCards}>出牌
+                        </button>
+                        <button onClick={() => {
+                            game = act(game, ACTION.GAME_CLEAR_SELECTION)
+                        }}>清空
+                        </button>
+                    </div>
+                }
 
-          <CardSelector cardPool={cardPool} disabled={ADisabled} bindClear={f => clearA = f}
-                        confirmCallback={(cardsUsed) => {
-                            updateA(1)
-                            updateB(0)
-                            updateStatus(STATUS.SELECT_B)
-                            cardsUsed.forEach((e, i) => cardPool[i] -= e)
-                            updateCardPool(cardPool)
-                        }
-                        }/>
-          <div style={{display: 'flex', flexDirection: 'row', justifyContent: 'center'}}>
-              <button  style={{margin:'0 10px'}} onClick={() => updateSide(SIDE.A)}>选上面</button>
-              <div  style={{margin:'0 30px'}}>我准备拿{side == SIDE.A ? '上' : '下'}面的牌</div>
-              <button style={{margin:'0 10px'}} onClick={() => updateSide(SIDE.b)}>选下面</button>
-              <input onChange={() => updateFirst(!playerFirst)} type="checkbox" checked={playerFirst}/>我{playerFirst ? '先' : '后'}出
-          </div>
-          <CardSelector cardPool={cardPool} disabled={BDisabled} bindClear={f => clearB = f}
-                        confirmCallback={(cardsUsed) => {
-                            updateB(1)
-                            updateStatus(STATUS.GAMING)
-                            cardsUsed.forEach((e, i) => cardPool[i] -= e)
-                            updateCardPool(cardPool)
-                        }
-                        }/>
-      </div>)
+            </div>
+
+            <div style={{position: "absolute", bottom: 0}}><CardTaker side={PLAYER_SIDE.BOTTOM} game={game}/></div>
+        </div>
+    )
 }
 
-export default Poker
+const SelectCards = () => {
+    let [game, updateGame] = useState(defaultGame)
+
+    //load game when mount, do not remember selected cards
+    useEffect(() => {
+        let ngame = getGame()
+        ngame.update = updateGame.bind(this)
+        game.player_cards_selected = []
+        let root = getGameRoot()
+
+        if (root) {
+            let node = build(root.playerCards, root.computerCards)
+            for (let i = 0; i < game.node_history.length && i <= game.node_position; i++) {
+                node = matchNext(node, game.node_history[i])
+                node = findNext(node)
+            }
+            ngame.node = node
+        }
+        updateGame(ngame)
+    }, [])
+
+    return (
+        <div>
+            <div style={{display: game.status == GAME_STATUS.SELECT ? 'inherit' : 'none'}}>
+                <CardSelector game={game} side={PLAYER_SIDE.TOP}/>
+
+                <div style={{display: 'flex', flexDirection: 'row', justifyContent: 'center'}}>
+                    <button style={{margin: '0 10px'}} onClick={() => {
+                        game = act(game, ACTION.GAME_START)
+                    }}>开始游戏
+                    </button>
+                    <button style={{margin: '0 10px'}} onClick={() => {
+                        game = act(game, ACTION.SELECT_TOP)
+                    }}>选上面
+                    </button>
+                    <div style={{margin: '0 30px'}}>我准备拿{game.player_side == PLAYER_SIDE.TOP ? '上' : '下'}面的牌</div>
+                    <button style={{margin: '0 10px'}} onClick={() => {
+                        game = act(game, ACTION.SELECT_DOWN)
+                    }}>选下面
+                    </button>
+                </div>
+
+                <CardSelector game={game} side={PLAYER_SIDE.BOTTOM}/>
+            </div>
+            <div
+                style={{display: game.status == GAME_STATUS.GAMING || game.status == GAME_STATUS.GAMEOVER ? 'inherit' : 'none'}}>
+                <Match game={game}/>
+            </div>
+        </div>
+    )
+}
+
+export default SelectCards
