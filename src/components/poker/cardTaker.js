@@ -7,6 +7,9 @@ import {onlyToPass} from "./algo"
 const CardTaker = ({side, game}) => {
     const [showingCards, updateShowingCards] = useState([])
     const isPlayer = side == PLAYER_SIDE.BOTTOM
+    const cards = isPlayer?game.player_cards:game.computer_cards
+    const cardsShow = isPlayer?game.player_cards_show:game.computer_cards_show
+    const cardWidth = 25*0.78125, cardNumberWidth = 25*0.2604
 
     const showArea =  <div style={{
         display:'flex',
@@ -14,22 +17,26 @@ const CardTaker = ({side, game}) => {
         justifyContent: 'center',
         alignItems: 'center',
         height:'25vh',
-        width:'100vw'
+        width:'auto',
+        margin:'5vh',
+        zoom:isPlayer?'1':'.6',
     }}>
-        {(isPlayer?game.player_cards_show:game.computer_cards_show).map((card,i) => (<Card
+        {cardsShow.map((card,i) => (<Card
           style={{
-              height:'20vh',
-              width:'15vh',
+              height:'25vh',
+              width:`${cardWidth}vh`,
           }}
           key={i}
+          cardIndex={i}
           number={card}
+          isForShow = {true}
           game={game}
         />))}
     </div>
 
-    return (<div>
+    return (<div style={{width:'100%'}}>
 
-        {side==PLAYER_SIDE.BOTTOM?showArea:''}
+        {isPlayer?showArea:''}
 
         <div style={{
             display: 'flex',
@@ -37,12 +44,18 @@ const CardTaker = ({side, game}) => {
             justifyContent: 'center',
             alignItems: 'center',
             height:'25vh',
-            width:'100vw'
+            width:'100%',
+            zoom:isPlayer?'1':'.6'
         }}>
-            {(isPlayer?game.player_cards:game.computer_cards).map((card,i) => (<Card
-              style={{height:'25vh'}}
+            {cards.map((card,i) => (<Card
+              style={{
+                  transform:`translateX(${i*cardNumberWidth-(cardNumberWidth*(cards.length-1))/2}vh)`,
+                  zIndex:i+10,
+                  width:`${cardWidth}vh`,
+                  position:'absolute',
+                  height:'25vh'}}
               key={i}
-              index={i}
+              cardIndex={i}
               side={side}
               number={card}
               game={game}/>))}
