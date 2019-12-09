@@ -1,6 +1,8 @@
 import _ from 'lodash'
 
 const removeItems = (arr, toremove) => {
+    toremove = toremove||[]
+
     for (let i of toremove) {
         let k = 0
         while (k < arr.length) {
@@ -11,13 +13,13 @@ const removeItems = (arr, toremove) => {
             k++
         }
     }
-
+    
     return arr
 }
 
 //Decision Tree
 class Node {
-    constructor(parent = null, turn = 0, player, computer, choice = [], level, choiceHistory) {
+    constructor(parent = null, turn = 0, player, computer, choice = null, level, choiceHistory) {
         this.parent = parent
         this.minmax = 0
         this.turn = turn
@@ -27,24 +29,19 @@ class Node {
         this.current = turn ? computer : player
         this.playerCards = player.cards
         this.computerCards = computer.cards
-        this.playerCardsSaved = [...player.cards]
-        this.computerCardsSaved = [...computer.cards]
-        if(turn){
-            removeItems(this.computerCardsSaved, choice)
-        }else{
-            removeItems(this.playerCardsSaved, choice)
-        }
         // this
         this.choice = choice
         this.end = 0
+    }
 
-        if (!turn && !this.computerCards.length) {
-            // console.log('B wins: '+choiceHistory.join(','))
+    tryUpdate() {
+        if (!this.turn && !this.computerCards.length) {
+            // console.log('B wins: ' + choiceHistory.join(','))
             this.update(0)
         }
 
-        if (turn && !this.playerCards.length) {
-            // console.log('A wins: '+choiceHistory.join(','))
+        if (this.turn && !this.playerCards.length) {
+            // console.log('A wins: ' + choiceHistory.join('+'))
             this.update(1)
         }
     }
@@ -56,9 +53,17 @@ class Node {
 
     update(value) {
         this.end = 1
+        this.minmax = value
         let cur = this.parent
+
         while (cur != null) {
-            cur.minmax = cur.turn ? cur.minmax & value : cur.minmax | value
+            let res = cur.turn
+
+            for (let next of cur.nexts) {
+                res = cur.turn ? (res & next.minmax) : (res | next.minmax)
+            }
+
+            cur.minmax = res
             cur = cur.parent
         }
     }
@@ -66,6 +71,8 @@ class Node {
 
 const isPokerMatch = (sample, b) => {
     if (!sample || !sample.length) return true
+    if (b && !b.length) return true
+
     let lens = sample.length, lenb = b.length
     let allSameS = new Set(sample).size === 1, allSameB = new Set(b).size === 1
     let firstMatch = b[0] > sample[0]
@@ -101,12 +108,16 @@ const isPokerMatch = (sample, b) => {
 }
 
 class Player {
-    constructor(cards = []) {
+    constructor(cards = [], goFirst) {
         this.cards = cards
+        this.goFirst = goFirst
         this.cards = this.cards.sort((a, b) => a - b)
     }
 
     choices(choice = null) {
+        if(choice===null && !this.goFirst)
+            return [[]]
+
         let consecs = [], ones = [], twos = [], threes = [],
             consec = [], sameCount = 1, kings = [], bombs = []
 
@@ -162,11 +173,13 @@ class Player {
         }
 
         let all = [consecs, ones, twos, threes, kings, bombs, threeOnes, threeTwos]
-            .reduce((p, c) => _.concat(p, _.uniqBy(c, JSON.stringify)), [])
-            .filter(isPokerMatch.bind(this, choice))
 
-        //no choice is a choice
-        return all.length ? all : [[]]
+        //no choice is a choice, but if you go first, you can not pass
+        if (choice && choice.length)
+            all.push([[]])
+
+        return all.reduce((p, c) => _.concat(p, _.uniqBy(c, JSON.stringify)), [])
+            .filter(isPokerMatch.bind(this, choice))
     }
 
     remove(choice) {
@@ -192,15 +205,14 @@ class Player {
 
 const buildTree = (node = null, level, choiceHistory) => {
     if (node.end) return
-    let choices = node.player.choices(node.choice)
+    let choices = node.current.choices(node.choice)
 
-    if (!level) choices.push([])//first round can be skipped
-
-    for (let choice of node.current.choices(node.choice)) {
+    for (let choice of choices) {
         let stashed = [...choice]
         node.current.remove(choice)
         choiceHistory.push(stashed)
         let child = node.add(new Node(node, 1 - node.turn, node.player, node.computer, stashed, level, choiceHistory))
+        child.tryUpdate()
         buildTree(child, level + 1, choiceHistory)
         choiceHistory.pop()
         node.current.update(stashed)
@@ -211,8 +223,8 @@ const buildTree = (node = null, level, choiceHistory) => {
 
 //player: player's cards
 //computer: computer's cards
-const build = (player, computer) => {
-    let root = new Node(null, 0, new Player(player), new Player(computer))
+const build = (player, computer,playerFirst) => {
+    let root = new Node(null, 0, new Player(player,playerFirst), new Player(computer,!playerFirst))
 
     buildTree(root, 0, [])
 
@@ -220,17 +232,103 @@ const build = (player, computer) => {
 }
 
 //只能过
-const onlyToPass = (node)=>{
-    return node.nexts.length==1 && !node.nexts[0].choice.length
+const onlyToPass = (node) => {
+    return node.nexts.length == 1 && !node.nexts[0].choice.length
 }
 
 const findNext = (node) => {
     if (node.turn) return _.minBy(node.nexts, next => next.minmax)
-    return _.maxBy(node.nexts, next => next.minmax)
+    let maxMinmax = _.maxBy(node.nexts, next => next.minmax)
+    return maxMinmax
 }
 
 const matchNext = (node, chosen) => {
     return node.nexts.filter(next => _.isEqual(next.choice, chosen))[0]
 }
 
-export {build, findNext, matchNext,onlyToPass}
+const randomMatch = (min, max) => {
+    const randomInt = (min, max) => {
+        return Math.floor(Math.random() * ((max - min) + 1)) + min
+    }
+
+    const cardPool = [...Array(18)].fill(4)
+        , cards1 = [...Array(18)].map((_, i) => {
+        return [i, 0]
+    })
+        , cards2 = [...Array(18)].map((_, i) => {
+        return [i, 0]
+    })
+    cardPool[17] = 1
+    cardPool[16] = 1
+
+    let cardTotal1 = randomInt(min, max), cardTotal2 = randomInt(min, max)
+
+    Array(cardTotal1).fill(0).forEach(() => {
+        for (; ;) {
+            let card = randomInt(3, 17)
+            if (cardPool[card] > 0) {
+                cardPool[card]--
+                cards1[card][1]++
+                break
+            }
+        }
+    })
+
+    Array(cardTotal2).fill(0).forEach(() => {
+        for (; ;) {
+            let card = randomInt(3, 17)
+            if (cardPool[card] > 0) {
+                cardPool[card]--
+                cards2[card][1]++
+                break
+            }
+        }
+    })
+
+    return [_.chain(cards1).filter(card => card[1]).flatMap(card => [...Array(card[1])].fill(card[0])).value(),
+        _.chain(cards2).filter(card => card[1]).flatMap(card => [...Array(card[1])].fill(card[0])).value()]
+}
+
+const getGoodMatch = (target) => {
+
+    let res = 1
+
+    while (res >= target || !res) {
+        try {
+            const [player, computer] = randomMatch(3, 7)
+            //example good match
+            // let bstr = '7 9 9', astr = '3 4 4 6 6 8 8 17'
+            // let a = new Player(astr.split(' ').map(Number)), b = new Player(bstr.split(' ').map(Number))
+            let a = new Player(player), b = new Player(computer)
+
+            let root = new Node(null, 0, a, b)
+
+            buildTree(root, 0, [])
+
+            let win = 0
+            for (let next of root.nexts) {
+                win += next.minmax
+            }
+
+            res = win / root.nexts.length
+            if (root.minmax && res > 0 && res < target) {
+                console.log(`got ${win} winning choices of total ${root.nexts.length}`)
+                console.log(`The start cards are: ${player}, ${computer}`)
+            }
+        } catch (e) {
+            console.log(e)
+        }
+    }
+}
+
+const buildRootFromStr = (astr,bstr,aGoFirst)=>{
+    let a = new Player(astr.split(',').map(Number),aGoFirst), b = new Player(bstr.split(',').map(Number),!aGoFirst)
+
+    let root = new Node(null, 0, a, b)
+
+    buildTree(root, 0, [])
+
+    return root
+}
+
+export {build, findNext, matchNext, onlyToPass,removeItems}

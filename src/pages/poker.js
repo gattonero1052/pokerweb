@@ -22,7 +22,7 @@ const DefaultCardPool = [...Array(18).keys()].map(n => [n < 16 ? 4 : 1, 0, 0])
 
 const Match = ({game}) => {
     const confirmCards = () => {
-        if (!game.player_cards_selected.length && !onlyToPass(game.node)) {
+        if (!game.player_cards_selected.length && game.player_first && game.round===0) {
             alert('选牌先')
             return
         }

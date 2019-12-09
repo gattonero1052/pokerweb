@@ -1,5 +1,6 @@
 import {GAME_STATUS, PLAYER_SIDE, ACTION} from "./constants"
-import {build, findNext, matchNext} from './algo'
+import {build, findNext, matchNext,removeItems} from './algo'
+import _ from "lodash";
 
 const checkEnv = () => {
     let res = true
@@ -96,10 +97,6 @@ const getRoot = ()=>{
     }
     return null
 }
-const addHistory = (game)=>{
-    let choice = game.node.choice || [] //no choice for first node
-    game.node_history[++game.node_position] = choice
-}
 const defaultSelection = (selection)=>{
     return [...Array(selection.length).keys()].fill(0)
 }
@@ -175,23 +172,27 @@ const act = (game, action, params) => {
             break
 
         case ACTION.GAME_SHOWCARDS:
+            game.round++
             var chosen = game.player_cards_selected
             chosen = chosen.sort((a,b)=>a-b)
             let next = matchNext(game.node, chosen)
-            if(!next){return false}
-            game.player_cards = game.player_first?next.playerCardsSaved:next.computerCardsSaved
+
+            game.player_cards = next.playerCards = removeItems([...game.node.playerCards],chosen)
+            game.computer_cards = next.computerCards = [...game.node.computerCards]
             game.player_cards_show = chosen
             game.player_cards_selected_suit_last = [...game.player_cards_selected_suit]
+
             let nextForComputer = findNext(next)
             if(nextForComputer){
-                next = nextForComputer
-                game.node = next
-                game.computer_cards =game.player_first? next.computerCardsSaved:next.playerCardsSaved
-                game.computer_cards_show = next.choice
-                addHistory(game,next)
-            }else{
+                game.round++
+                game.computer_cards = nextForComputer.computerCards = removeItems([...next.computerCards],nextForComputer.choice)
+                game.player_cards = nextForComputer.playerCards = [...next.playerCards]
+                game.computer_cards_show = nextForComputer.choice
+                game.node = nextForComputer
+            }else{//computer lose
                 game.node = next
             }
+
             game.player_cards_selected = []
             game.player_cards_selected_suit = []
             break
@@ -234,38 +235,32 @@ const act = (game, action, params) => {
             break
 
         case ACTION.GAME_RESTART:
-            let root = getRoot()
+            let node = game.node
+            while(node.parent!=null) node = node.parent
+            game.node = node
 
-            if (root) {
-                let node = build(root.playerCards, root.computerCards)
-                if(game.player_first){
-                    game.player_cards = node.playerCards
-                    game.computer_cards = node.computerCards
-                    game.computer_cards_show = []
-                }else{
-                    node = build(root.computerCards,root.playerCards)
-                    let next = findNext(node)
-
-                    game.player_cards = next.computerCardsSaved
-                    game.computer_cards = next.playerCardsSaved
-                    game.computer_cards_show = next.choice
-                    node = next
+            if (getRoot()) {
+                // let node = build(root.playerCards, root.computerCards)
+                if(!game.player_first){
+                    game = act(game,ACTION.GAME_SHOWCARDS)
                 }
 
-                addHistory(game,node)
-                game.node = node
                 game.player_cards_selected = []
                 game.player_cards_selected_suit = []
                 game.player_cards_selected_each = defaultSelection(game.player_cards)
                 game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map(i=>-~(Math.random()*4)-1)
                 game.player_cards_show = []
                 game.status = GAME_STATUS.GAMING
+                game.round = 0
             }
 
             break
 
         case ACTION.GAME_START:
+            game.round = 0
             game.status = GAME_STATUS.GAMING
+            game.computer_cards_show = []
+            game.player_cards_show = []
 
             if(game.side==PLAYER_SIDE.TOP){
                 game.player_cards = getCards(game.selection_a)
@@ -275,26 +270,35 @@ const act = (game, action, params) => {
                 game.computer_cards = getCards(game.selection_a)
             }
 
-            game.node = build(game.player_cards,game.computer_cards)
+            game.node = build(game.player_cards,game.computer_cards,game.player_first)
+            game.node.playerCards = [...game.player_cards]
+            game.node.computerCards = [...game.computer_cards]
             if(!game.player_first){
                 saveRoot(game.node)
-
-                game.node = build(game.computer_cards,game.player_cards)
-                //saving root
-
-                //auto select
-                let next = findNext(game.node)
-                game.computer_cards = next.playerCardsSaved
-                game.computer_cards_show = next.choice
-                game.player_cards = next.computerCardsSaved
-                addHistory(game,next)
-                game.node = next
-            }else{
-                game.computer_cards_show = []
+                game = act(game,ACTION.GAME_SHOWCARDS)
             }
+
+            // if(!game.player_first){
+            //     saveRoot(game.node)
+            //     game.round++
+            //     game.node = build(game.computer_cards,game.player_cards)
+            //     //saving root
+            //
+            //     //auto select
+            //     var Node = game.node
+            //     if (Node.turn) return _.minBy(Node.nexts, next => next.minmax)
+            //     var Next = _.maxBy(Node.nexts, next => next.minmax)
+            //     // return maxMinmax
+            //     // let next = findNext(game.node)
+            //     game.computer_cards = Next.playerCardsSaved
+            //     game.computer_cards_show = Next.choice
+            //     game.player_cards = Next.computerCardsSaved
+            //     game.node = Next
+            // }else{
+            //     game.computer_cards_show = []
+            // }
             game.player_cards_selected_each = defaultSelection(game.player_cards)
             game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map((_,i)=>game.player_cards[i]>15?game.player_cards[i]-15:-~(Math.random()*4)-1)
-            console.log(game.player_cards_selected_each_suit)
 
             break
     }
