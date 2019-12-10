@@ -26,6 +26,25 @@
     text-align: center;
 }
 
+poker-input{
+    display: flex;
+    font-weight: bold;
+}
+.poker-input input{
+    height:40px;
+    width:100px;
+    text-align: center;
+    border:none;
+    border-radius: 9999px;
+    opacity:.6;
+    padding:0 20px;
+    line-height: 20px;
+}
+
+.poker-input input:focus{
+    outline: none;
+}
+
 .poker-button{
     cursor: pointer;
     width: 120px;

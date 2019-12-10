@@ -1,10 +1,7 @@
 import _ from 'lodash'
-import Worker from './algo.worker.js'
-
-const builder = typeof window === 'object' && new Worker()
 
 const removeItems = (arr, toremove) => {
-    toremove = toremove||[]
+    toremove = toremove || []
 
     for (let i of toremove) {
         let k = 0
@@ -16,13 +13,16 @@ const removeItems = (arr, toremove) => {
             k++
         }
     }
-    
+
     return arr
 }
 
 //Decision Tree
 class Node {
     constructor(parent = null, turn = 0, player, computer, choice = null, level, choiceHistory) {
+        this._heap = 0
+        this.maxLevel = this.level = level
+        this.minLevel = 1000000
         this.parent = parent
         this.minmax = 0
         this.turn = turn
@@ -32,19 +32,19 @@ class Node {
         this.current = turn ? computer : player
         this.playerCards = player.cards
         this.computerCards = computer.cards
-        // this
         this.choice = choice
         this.end = 0
+        this.choiceHistory = choiceHistory
     }
 
     tryUpdate() {
-        if (!this.turn && !this.computerCards.length) {
-            // console.log('B wins: ' + choiceHistory.join(','))
+        if (this.end === 1) {
+            this.update(-1)
+        } else if (!this.turn && !this.computerCards.length) {
+            // console.log('Computer wins: ' + this.choiceHistory.map(c=>`[${c}]`).join('    '))
             this.update(0)
-        }
-
-        if (this.turn && !this.playerCards.length) {
-            // console.log('A wins: ' + choiceHistory.join('+'))
+        } else if (this.turn && !this.playerCards.length) {
+            // console.log('Player wins: ' + this.choiceHistory.map(c=>`[${c}]`).join('    '))
             this.update(1)
         }
     }
@@ -54,20 +54,38 @@ class Node {
         return node
     }
 
+    //update player's minmax, if minmax is -1, then result is unknown
     update(value) {
         this.end = 1
-        this.minmax = value
-        let cur = this.parent
 
-        while (cur != null) {
-            let res = cur.turn
-
-            for (let next of cur.nexts) {
-                res = cur.turn ? (res & next.minmax) : (res | next.minmax)
+        if (value === -1) {//force update, result is unknown
+            let cur = this
+            while (cur != null) {
+                cur.minmax = -1
+                cur = cur.parent
             }
+        } else {
+            this.minmax = value
+            let cur = this.parent
 
-            cur.minmax = res
-            cur = cur.parent
+            while (cur != null) {
+                let res = cur.turn, maxLevel = cur.maxLevel, minLevel = cur.minLevel
+
+                for (let next of cur.nexts) {
+                    maxLevel = Math.max(maxLevel, next.maxLevel)
+                    minLevel = Math.min(minLevel, next.minLevel)
+
+                    if (next.minmax === -1) {
+                        res = -1
+                    }
+
+                    res = cur.turn ? (res & next.minmax) : (res | next.minmax)
+                }
+                cur.maxLevel = maxLevel
+                cur.minLevel = minLevel
+                cur.minmax = cur.minmax === -1 ? cur.minmax : res
+                cur = cur.parent
+            }
         }
     }
 }
@@ -118,7 +136,7 @@ class Player {
     }
 
     choices(choice = null) {
-        if(choice===null && !this.goFirst)
+        if (choice === null && !this.goFirst)
             return [[]]
 
         let consecs = [], ones = [], twos = [], threes = [],
@@ -205,9 +223,16 @@ class Player {
 
 //   let a = '3 4 4 6 6 8 8 17'.split(' ').map(Number), b = '7 9 9'.split(' ').map(Number)
 //   let root = new Node(null, 0, a, b)
+let _HEAP = 0
 
-const buildTree = (node = null, level, choiceHistory) => {
-    if (node.end) return
+const buildTree = (node = null, level, choiceHistory,MAXHEAP) => {
+    _HEAP++
+    if (node && _HEAP >= MAXHEAP) {
+        node.minmax = -1
+        node.end = 1
+    }
+
+    if (node && node.end) return
     let choices = node.current.choices(node.choice)
 
     for (let choice of choices) {
@@ -215,117 +240,34 @@ const buildTree = (node = null, level, choiceHistory) => {
         node.current.remove(choice)
         choiceHistory.push(stashed)
         let child = node.add(new Node(node, 1 - node.turn, node.player, node.computer, stashed, level, choiceHistory))
+
+        buildTree(child, level + 1, choiceHistory,MAXHEAP)
         child.tryUpdate()
-        buildTree(child, level + 1, choiceHistory)
         choiceHistory.pop()
         node.current.update(stashed)
-    }
-}
 
-//player: player's cards
-//computer: computer's cards
-const build = async (player, computer,playerFirst,MAXHEAP = 200000) => {
-    return await builder.build(player,computer,playerFirst,MAXHEAP)
-}
-
-//只能过
-const onlyToPass = (node) => {
-    return node.nexts.length == 1 && !node.nexts[0].choice.length
-}
-
-const findNext = (node) => {
-    if (node.turn) return _.minBy(node.nexts, next => [next.minmax, next.minLevel])
-    let maxMinmax = _.maxBy(node.nexts, next => [next.minmax, next.maxLevel])
-    return maxMinmax
-}
-
-const matchNext = (node, chosen) => {
-    return node.nexts.filter(next => _.isEqual(next.choice, chosen))[0]
-}
-
-const randomMatch = (min, max) => {
-    const randomInt = (min, max) => {
-        return Math.floor(Math.random() * ((max - min) + 1)) + min
-    }
-
-    const cardPool = [...Array(18)].fill(4)
-        , cards1 = [...Array(18)].map((_, i) => {
-        return [i, 0]
-    })
-        , cards2 = [...Array(18)].map((_, i) => {
-        return [i, 0]
-    })
-    cardPool[17] = 1
-    cardPool[16] = 1
-
-    let cardTotal1 = randomInt(min, max), cardTotal2 = randomInt(min, max)
-
-    Array(cardTotal1).fill(0).forEach(() => {
-        for (; ;) {
-            let card = randomInt(3, 17)
-            if (cardPool[card] > 0) {
-                cardPool[card]--
-                cards1[card][1]++
-                break
-            }
-        }
-    })
-
-    Array(cardTotal2).fill(0).forEach(() => {
-        for (; ;) {
-            let card = randomInt(3, 17)
-            if (cardPool[card] > 0) {
-                cardPool[card]--
-                cards2[card][1]++
-                break
-            }
-        }
-    })
-
-    return [_.chain(cards1).filter(card => card[1]).flatMap(card => [...Array(card[1])].fill(card[0])).value(),
-        _.chain(cards2).filter(card => card[1]).flatMap(card => [...Array(card[1])].fill(card[0])).value()]
-}
-
-const getGoodMatch = (target) => {
-
-    let res = 1
-
-    while (res >= target || !res) {
-        try {
-            const [player, computer] = randomMatch(3, 7)
-            //example good match
-            // let bstr = '7 9 9', astr = '3 4 4 6 6 8 8 17'
-            // let a = new Player(astr.split(' ').map(Number)), b = new Player(bstr.split(' ').map(Number))
-            let a = new Player(player), b = new Player(computer)
-
-            let root = new Node(null, 0, a, b)
-
-            buildTree(root, 0, [])
-
-            let win = 0
-            for (let next of root.nexts) {
-                win += next.minmax
-            }
-
-            res = win / root.nexts.length
-            if (root.minmax && res > 0 && res < target) {
-                console.log(`got ${win} winning choices of total ${root.nexts.length}`)
-                console.log(`The start cards are: ${player}, ${computer}`)
-            }
-        } catch (e) {
-            console.log(e)
+        if (child.minmax === -1) {
+            break
         }
     }
 }
 
-const buildRootFromStr = (astr,bstr,aGoFirst)=>{
-    let a = new Player(astr.split(',').map(Number),aGoFirst), b = new Player(bstr.split(',').map(Number),!aGoFirst)
+const buildRootFromStr = (astr, bstr, aGoFirst) => {
+    let a = new Player(astr.split(',').map(Number), aGoFirst), b = new Player(bstr.split(',').map(Number), !aGoFirst)
 
-    let root = new Node(null, 0, a, b)
+    let root = new Node(null, 0, a, b, null, 0, [])
 
     buildTree(root, 0, [])
 
     return root
 }
 
-export {build, findNext, matchNext, onlyToPass,removeItems}
+//build function from algo.js, except for that, all are the same
+export function build(player, computer, playerFirst ,MAXHEAP) {
+    let root = new Node(null, 0, new Player(player, playerFirst), new Player(computer, !playerFirst), null, 0, [])
+
+    _HEAP = 0
+    buildTree(root, 0, [],MAXHEAP)
+
+    return root
+}

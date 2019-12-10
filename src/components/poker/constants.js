@@ -10,6 +10,9 @@ export const PLAYER_SIDE = {
 }
 
 export const ACTION = {
+    CHANGE_MAXHEAP:-3,
+    START_LOADING:-1,
+    END_LOADING:-2,
     SELECT_STOP_ANIMATION:5,
     SELECT_ALERT_A:2,
     SELECT_ALERT_B:3,

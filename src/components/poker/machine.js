@@ -25,7 +25,9 @@ card_pool[16] = 1
 card_pool[17] = 1
 
 const DEFAULT = {
-    _version: "1.0.0",
+    _version: "1.0.1",
+    maxheap:10,
+    loading:false,
     status: GAME_STATUS.SELECT,
     selection_alert:[],
     card_pool: card_pool,
@@ -83,10 +85,16 @@ const save = (game = DEFAULT, str) => {
     return null
 }
 
-const get = () => {
+const get = (refresh) => {
     if (checkEnv()) {
+        if(refresh) return save()
+
         let object = window.localStorage.getItem(KEY)
-        return object ? JSON.parse(object) : save()
+        object = object ? JSON.parse(object) : save()
+        if(object._version!==DEFAULT._version) {
+            object = save()
+        }
+        return object
     }
     return null
 }
@@ -112,8 +120,106 @@ const getCards = (selection)=>{
     return cards.sort((a,b)=>a-b)
 }
 
-const act = (game, action, params) => {
+const exchange = (a,p1,p2)=>{
+    let t=a[p1]
+    a[p1]=a[p2]
+    a[p2]=t
+}
+
+const asyncAct =async (game, action, params)=>{
+    if(game.loading) return game
+
+    game = act(game,ACTION.START_LOADING)
     switch (action) {
+        case ACTION.GAME_RESTART:
+            let [needExchange] = params
+            let node = game.node
+            while(node.parent!=null) node = node.parent
+            game.node = node
+
+            if(needExchange){
+                game.player_first = !game.player_first
+                exchange(game,'selection_a','selection_b')
+                exchange(game.node,'playerCards','computerCards')
+                exchange(game.node,'player','computer')
+            }
+
+            if (getRoot()) {
+                // let node = build(root.playerCards, root.computerCards)
+                if(!game.player_first){
+                    game = act(game,ACTION.GAME_SHOWCARDS)
+                }else{
+                    game.computer_cards_show = []
+                }
+
+                game.player_cards = game.node.playerCards
+                game.computer_cards = game.node.computerCards
+                game.player_cards_selected = []
+                game.player_cards_selected_suit = []
+                game.player_cards_selected_each = defaultSelection(game.player_cards)
+                game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map(i=>-~(Math.random()*4)-1)
+                game.player_cards_show = []
+                game.status = GAME_STATUS.GAMING
+                game.round = 0
+            }
+
+            break
+
+        case ACTION.GAME_START:
+            game.computer_cards_show = []
+            game.player_cards_show = []
+
+            if(game.side==PLAYER_SIDE.TOP){
+                game.player_cards = getCards(game.selection_a)
+                game.computer_cards = getCards(game.selection_b)
+            }else{
+                game.player_cards = getCards(game.selection_b)
+                game.computer_cards = getCards(game.selection_a)
+            }
+
+            game.node = await build(game.player_cards,game.computer_cards,game.player_first,game.maxheap*100000)
+
+            if(game.node.minmax===-1){
+                //max depth exceeded
+                break
+            }
+
+            game.node.playerCards = [...game.player_cards]
+            game.node.computerCards = [...game.computer_cards]
+            if(!game.player_first){
+                saveRoot(game.node)
+                game = act(game,ACTION.GAME_SHOWCARDS)
+            }
+            game.player_cards_selected_each = defaultSelection(game.player_cards)
+            game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map((_,i)=>game.player_cards[i]>15?game.player_cards[i]-15:-~(Math.random()*4)-1)
+            game.round = 0
+            game.status = GAME_STATUS.GAMING
+            break
+    }
+    game = act(game,ACTION.END_LOADING)
+    //save
+    game = save(game)
+    if(game.update) game.update(game)
+    return game
+}
+
+const act = (game, action, params) => {
+    if(game.loading && action!=ACTION.END_LOADING) return game
+
+    switch (action) {
+        case ACTION.CHANGE_MAXHEAP:
+            var [maxheap] = params
+            game.maxheap = Math.max(1,Math.min(maxheap,40))
+            break
+
+        case ACTION.START_LOADING:
+            game.loading = true
+            break
+
+        case ACTION.END_LOADING:
+            game.loading = false
+            break
+
         case ACTION.SELECT_STOP_ANIMATION:
             if(!game.selection_animating) return game
             game.selection_animating = 0
@@ -176,6 +282,7 @@ const act = (game, action, params) => {
             var chosen = game.player_cards_selected
             chosen = chosen.sort((a,b)=>a-b)
             let next = matchNext(game.node, chosen)
+            if(!next) return false
 
             game.player_cards = next.playerCards = removeItems([...game.node.playerCards],chosen)
             game.computer_cards = next.computerCards = [...game.node.computerCards]
@@ -233,74 +340,6 @@ const act = (game, action, params) => {
         case ACTION.GAME_END:
             game.status = GAME_STATUS.GAMEOVER
             break
-
-        case ACTION.GAME_RESTART:
-            let node = game.node
-            while(node.parent!=null) node = node.parent
-            game.node = node
-
-            if (getRoot()) {
-                // let node = build(root.playerCards, root.computerCards)
-                if(!game.player_first){
-                    game = act(game,ACTION.GAME_SHOWCARDS)
-                }
-
-                game.player_cards_selected = []
-                game.player_cards_selected_suit = []
-                game.player_cards_selected_each = defaultSelection(game.player_cards)
-                game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map(i=>-~(Math.random()*4)-1)
-                game.player_cards_show = []
-                game.status = GAME_STATUS.GAMING
-                game.round = 0
-            }
-
-            break
-
-        case ACTION.GAME_START:
-            game.round = 0
-            game.status = GAME_STATUS.GAMING
-            game.computer_cards_show = []
-            game.player_cards_show = []
-
-            if(game.side==PLAYER_SIDE.TOP){
-                game.player_cards = getCards(game.selection_a)
-                game.computer_cards = getCards(game.selection_b)
-            }else{
-                game.player_cards = getCards(game.selection_b)
-                game.computer_cards = getCards(game.selection_a)
-            }
-
-            game.node = build(game.player_cards,game.computer_cards,game.player_first)
-            game.node.playerCards = [...game.player_cards]
-            game.node.computerCards = [...game.computer_cards]
-            if(!game.player_first){
-                saveRoot(game.node)
-                game = act(game,ACTION.GAME_SHOWCARDS)
-            }
-
-            // if(!game.player_first){
-            //     saveRoot(game.node)
-            //     game.round++
-            //     game.node = build(game.computer_cards,game.player_cards)
-            //     //saving root
-            //
-            //     //auto select
-            //     var Node = game.node
-            //     if (Node.turn) return _.minBy(Node.nexts, next => next.minmax)
-            //     var Next = _.maxBy(Node.nexts, next => next.minmax)
-            //     // return maxMinmax
-            //     // let next = findNext(game.node)
-            //     game.computer_cards = Next.playerCardsSaved
-            //     game.computer_cards_show = Next.choice
-            //     game.player_cards = Next.computerCardsSaved
-            //     game.node = Next
-            // }else{
-            //     game.computer_cards_show = []
-            // }
-            game.player_cards_selected_each = defaultSelection(game.player_cards)
-            game.player_cards_selected_each_suit = defaultSelection(game.player_cards).map((_,i)=>game.player_cards[i]>15?game.player_cards[i]-15:-~(Math.random()*4)-1)
-
-            break
     }
 
     //save
@@ -309,4 +348,4 @@ const act = (game, action, params) => {
     return game
 }
 
-export {save, get, DEFAULT, act,getRoot,getCards}
+export {save, get, DEFAULT, act,asyncAct,getRoot,getCards}

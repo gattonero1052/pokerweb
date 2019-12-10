@@ -5,3 +5,15 @@
  */
 
 // You can delete this file if you're not using it
+exports.onCreateWebpackConfig = ({ actions: { replaceWebpackConfig }, getConfig }) => {
+    const config = getConfig()
+
+    config.module.rules.push({
+        test: /\.worker\.js$/,
+        use: { loader: 'workerize-loader' }
+    })
+
+    config.output.globalObject = 'this'
+
+    replaceWebpackConfig(config)
+}
